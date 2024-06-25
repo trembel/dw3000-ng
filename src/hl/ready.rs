@@ -3,9 +3,9 @@
 use core::{num::Wrapping, ops::Not};
 
 use byte::BytesExt as _;
-use embedded_hal::spi;
+use embedded_hal::{digital::OutputPin, spi};
 
-use super::AutoDoubleBufferReceiving;
+use super::{AutoDoubleBufferReceiving, SleepState};
 use crate::{
     configs::SfdSequence, time::Instant, Config, Error, FastCommand, Ready, Sending,
     SingleBufferReceiving, Sleeping, DW3000,
@@ -459,6 +459,12 @@ where
         Ok(())
     }
 
+    /// Enable the SPIRDY interrupt flag
+    pub fn enable_spirdy_interrupt(&mut self) -> Result<(), Error<SPI>> {
+        self.ll.sys_enable().modify(|_, w| w.spirdy_en(0b1))?;
+        Ok(())
+    }
+
     /// Enables transmit interrupts for the events that `wait` checks
     ///
     /// Overwrites any interrupt flags that were previously set.
@@ -750,6 +756,79 @@ where
         ];
 
         Ok(raw)
+    }
+
+    /// This function is used to put the DW3000 into sleep.
+    /// `sleepstate` sets the sleepmode and possibly the duration
+    pub fn sleep<DELAY: embedded_hal::delay::DelayNs>(
+        mut self,
+        sleepstate: SleepState,
+        brownout: bool,
+        mut delay: DELAY,
+    ) -> Result<DW3000<SPI, Sleeping>, Error<SPI>> {
+        // Enable auto restoration of AON memory and RX calibration on wakeup
+        self.ll
+            .aon_dig_cfg()
+            .modify(|_, w| w.onw_aon_dld(1).onw_pgfcal(1))?;
+
+        // Save AON
+        self.ll.aon_ctrl().modify(|_, w| w.save(1))?;
+        delay.delay_us(85); // delay for 85us in order for AON to be saved (2.5.1.2)
+
+        if sleepstate == SleepState::DeepSleep {
+            // Set deepsleep mode
+            self.ll.aon_cfg().modify(|_, w| {
+                w.wake_cnt(0)
+                    .sleep_en(1)
+                    .wake_csn(1)
+                    .wake_wup(1)
+                    .brout_en(brownout.into())
+            })?;
+        } else if let SleepState::Sleep(time) = sleepstate {
+            //Set time before setting sleepmode
+            // Get bytes from time
+            let time_bytes = time.to_be_bytes();
+
+            // Configure sleep time - write low byte directly to aon
+            self.ll.aon_wdata().write(|w| w.value(time_bytes[0]))?;
+            self.ll.aon_addr().write(|w| w.value(0x102))?;
+            self.ll
+                .aon_ctrl()
+                .write(|w| w.dca_write_hi(1).dca_write(1))?;
+            self.ll.aon_ctrl().write(|w| w.dca_enab(1))?;
+
+            // Configure sleep time - write high byte directly to aon
+            self.ll.aon_wdata().write(|w| w.value(time_bytes[1]))?;
+            self.ll.aon_addr().write(|w| w.value(0x103))?;
+            self.ll
+                .aon_ctrl()
+                .write(|w| w.dca_write_hi(1).dca_write(1))?;
+            self.ll.aon_ctrl().write(|w| w.dca_enab(1))?;
+
+            // Stop writing
+            self.ll.aon_ctrl().write(|w| w)?;
+
+            // Delay for 32us, according to 8.2.11.6.1 of DW3000 user manual
+            delay.delay_us(32);
+
+            // Set sleep mode
+            self.ll.aon_cfg().modify(|_, w| {
+                w.wake_cnt(1)
+                    .sleep_en(1)
+                    .wake_csn(1)
+                    .wake_wup(1)
+                    .brout_en(brownout.into())
+            })?;
+        }
+
+        // Upload sleep configuration into AON in order to enter sleep
+        self.ll.aon_ctrl().modify(|_, w| w.cfg_upload(1))?;
+
+        Ok(DW3000 {
+            ll: self.ll,
+            seq: self.seq,
+            state: Sleeping {},
+        })
     }
 }
 
