@@ -357,7 +357,7 @@ where
             dst_addr: Some(Ieee802154Address::BROADCAST),
             src_addr: Some(self.get_address()?.1),
             src_pan_id: Some(self.get_address()?.0),
-            dst_pan_id: None,
+            dst_pan_id: Some(Ieee802154Pan::BROADCAST),
         };
 
         // Prepare transmitter
@@ -775,6 +775,16 @@ where
         self.ll.aon_ctrl().modify(|_, w| w.save(1))?;
         delay.delay_us(85); // delay for 85us in order for AON to be saved (2.5.1.2)
 
+        // HACK: Read old spi prescaler, change to 8 for the next two writes
+        let oldval: u16;
+        let gpio_reg = 0x40013000 as *mut u16;
+        unsafe {
+            oldval = *gpio_reg;
+            let mut val = oldval & 0b1111111111000111;
+            val = val | 0b0000000000010000;
+            *gpio_reg = val;
+        }
+
         if sleepstate == SleepState::DeepSleep {
             // Set deepsleep mode
             self.ll.aon_cfg().modify(|_, w| {
@@ -823,6 +833,11 @@ where
 
         // Upload sleep configuration into AON in order to enter sleep
         self.ll.aon_ctrl().modify(|_, w| w.cfg_upload(1))?;
+
+        // HACK: change prescaler back
+        unsafe {
+            *gpio_reg = oldval;
+        }
 
         Ok(DW3000 {
             ll: self.ll,
