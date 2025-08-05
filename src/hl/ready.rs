@@ -4,6 +4,7 @@ use core::{num::Wrapping, ops::Not};
 
 use byte::BytesExt as _;
 use embedded_hal::{digital::OutputPin, spi};
+use stm32_metapac::{spi::vals::Mbr, SPI1};
 
 use super::{AutoDoubleBufferReceiving, SleepState};
 use crate::{
@@ -805,15 +806,22 @@ where
         self.ll.aon_ctrl().modify(|_, w| w.save(1))?;
         delay.delay_us(85); // delay for 85us in order for AON to be saved (2.5.1.2)
 
-        // HACK: Read old spi prescaler, change to 8 for the next two writes
-        let oldval: u16;
-        let gpio_reg = 0x40013000 as *mut u16;
-        unsafe {
-            oldval = *gpio_reg;
-            let mut val = oldval & 0b1111111111000111;
-            val = val | 0b0000000000010000;
-            *gpio_reg = val;
-        }
+        // HACK: Disable SPI, Read old spi prescaler of STM32U535CE, change to 16 for the next two writes, Enable SPI
+        let oldprescaler = {
+            // DISABLE SPI
+            SPI1.cr1().modify(|w| w.set_spe(false));
+
+            // COPY OLD PRESCALER
+            let oldval = SPI1.cfg1().read().mbr();
+
+            // SET NEW PRESCALER 16
+            SPI1.cfg1().modify(|w| w.set_mbr(Mbr::DIV16));
+
+            // ENABLE SPI
+            SPI1.cr1().modify(|w| w.set_spe(true));
+
+            oldval
+        };
 
         if sleepstate == SleepState::DeepSleep {
             // Set deepsleep mode
@@ -865,8 +873,15 @@ where
         self.ll.aon_ctrl().modify(|_, w| w.cfg_upload(1))?;
 
         // HACK: change prescaler back
-        unsafe {
-            *gpio_reg = oldval;
+        {
+            // DISABLE SPI
+            SPI1.cr1().modify(|w| w.set_spe(false));
+
+            // SET OLD PRESCALER
+            SPI1.cfg1().modify(|w| w.set_mbr(oldprescaler));
+
+            // ENABLE SPI
+            SPI1.cr1().modify(|w| w.set_spe(true));
         }
 
         Ok(DW3000 {
