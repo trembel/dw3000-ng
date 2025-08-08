@@ -367,6 +367,9 @@ where
             .map_err(|error| nb::Error::Other(Error::Spi(error)))?
             .rx_stamp();
 
+        // Re-enable RX immediately here. Might lose CIR
+        self.fast_cmd(FastCommand::CMD_RX)?;
+
         let rssi = self.get_first_path_signal_power()?;
         let rx_quality = RxQuality {
             los_confidence_level: 1.0, // TODO
