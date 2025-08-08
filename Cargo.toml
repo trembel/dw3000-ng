@@ -25,7 +25,7 @@ nb = "1.0"
 fixed = "1.7"
 defmt = { version = "0.3", optional = true }
 num-traits = { version = "0.2.18", default-features = false, features = ["libm"], optional = true }
-stm32-metapac = { git = "https://github.com/embassy-rs/stm32-data-generated", tag = "stm32-data-0069be7389d0378d826003304d72a13008f3ebce", features = ["stm32u545re"] }
+stm32-metapac = { git = "https://github.com/embassy-rs/stm32-data-generated", tag = "stm32-data-0069be7389d0378d826003304d72a13008f3ebce", features = ["stm32u535ce"] }
 
 [dev-dependencies]
 embedded-hal-mock = "0.10"
