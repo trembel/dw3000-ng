@@ -2,7 +2,7 @@ use core::num::Wrapping;
 
 use embedded_hal::spi;
 
-use crate::{ll, Config, Error, Ready, Uninitialized, DW3000};
+use crate::{ll, Config, Error, Ready, Sleeping, Uninitialized, DW3000};
 //use rtt_target::{rprintln};
 
 impl<SPI> DW3000<SPI, Uninitialized>
@@ -210,5 +210,14 @@ where
             seq: self.seq,
             state: Ready,
         })
+    }
+
+    /// Changes state from DW3000 from uninitialized to Sleeping without writing to device
+    pub fn into_sleeping(self) -> DW3000<SPI, Sleeping> {
+        DW3000 {
+            ll: self.ll,
+            seq: self.seq,
+            state: Sleeping,
+        }
     }
 }

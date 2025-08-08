@@ -43,7 +43,7 @@ pub struct AutoDoubleBufferReceiving {
 
 /// Indicates that the `DW3000` instance is currently sleeping
 #[derive(Debug)]
-pub struct Sleeping {}
+pub struct Sleeping;
 
 /// Any state struct that implements this trait signals that the radio is
 /// **not** sleeping.
