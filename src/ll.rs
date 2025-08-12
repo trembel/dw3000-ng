@@ -18,7 +18,7 @@
 use core::fmt::{Display, Formatter};
 use core::{fmt, marker::PhantomData};
 
-use embedded_hal::spi;
+use crate::{maybe_async_attr, spi_type};
 
 /// Entry point to the DW3000 driver's low-level API
 ///
@@ -39,20 +39,23 @@ impl<SPI> DW3000<SPI> {
         DW3000 { spi }
     }
 
-    /// commentaire
-    pub fn fast_command(&mut self, fast: u8) -> Result<(), Error<SPI>>
+    /// DW3000 fast command
+    #[maybe_async_attr]
+    pub async fn fast_command(&mut self, fast: u8) -> Result<(), Error<SPI>>
     where
-        SPI: spi::SpiDevice<u8>,
+        SPI: spi_type::spi::SpiDevice<u8>,
     {
         let mut buffer = [0];
         buffer[0] = (0x1 << 7) | ((fast << 1) & 0x3e) | 0x1;
 
-        SPI::write(&mut self.spi, &buffer).map_err(Error::Transfer)?;
+        SPI::write(&mut self.spi, &buffer)
+            .await
+            .map_err(Error::Transfer)?;
 
         Ok(())
     }
 
-    /// Allow access to the SPI bus
+    /// Allow direct access to the SPI bus
     pub fn bus(&mut self) -> &mut SPI {
         &mut self.spi
     }
@@ -64,13 +67,14 @@ impl<SPI> DW3000<SPI> {
 /// [`DW3000`].
 pub struct RegAccessor<'s, R, SPI>(&'s mut DW3000<SPI>, PhantomData<R>);
 
-impl<'s, R, SPI> RegAccessor<'s, R, SPI>
+impl<R, SPI> RegAccessor<'_, R, SPI>
 where
-    SPI: spi::SpiDevice<u8>,
+    SPI: spi_type::spi::SpiDevice<u8>,
 {
     /// Read from the register
     #[inline]
-    pub fn read(&mut self) -> Result<R::Read, Error<SPI>>
+    #[maybe_async_attr]
+    pub async fn read(&mut self) -> Result<R::Read, Error<SPI>>
     where
         R: Register + Readable,
     {
@@ -81,6 +85,7 @@ where
         self.0
             .spi
             .transfer_in_place(buffer)
+            .await
             .map_err(Error::Transfer)?;
 
         Ok(r)
@@ -88,7 +93,8 @@ where
 
     /// Write to the register
     #[inline]
-    pub fn write<F>(&mut self, f: F) -> Result<(), Error<SPI>>
+    #[maybe_async_attr]
+    pub async fn write<F>(&mut self, f: F) -> Result<(), Error<SPI>>
     where
         R: Register + Writable,
         F: FnOnce(&mut R::Write) -> &mut R::Write,
@@ -99,19 +105,22 @@ where
         let buffer = R::buffer(&mut w);
         init_header::<R>(true, buffer);
 
-        SPI::write(&mut self.0.spi, buffer).map_err(Error::Transfer)?;
+        SPI::write(&mut self.0.spi, buffer)
+            .await
+            .map_err(Error::Transfer)?;
 
         Ok(())
     }
 
     /// Modify the register
     #[inline]
-    pub fn modify<F>(&mut self, f: F) -> Result<(), Error<SPI>>
+    #[maybe_async_attr]
+    pub async fn modify<F>(&mut self, f: F) -> Result<(), Error<SPI>>
     where
         R: Register + Readable + Writable,
         F: for<'r> FnOnce(&mut R::Read, &'r mut R::Write) -> &'r mut R::Write,
     {
-        let mut r = self.read()?;
+        let mut r = self.read().await?;
         let mut w = R::write();
 
         <R as Writable>::buffer(&mut w).copy_from_slice(<R as Readable>::buffer(&mut r));
@@ -121,7 +130,9 @@ where
         let buffer = <R as Writable>::buffer(&mut w);
         init_header::<R>(true, buffer);
 
-        SPI::write(&mut self.0.spi, buffer).map_err(Error::Transfer)?;
+        SPI::write(&mut self.0.spi, buffer)
+            .await
+            .map_err(Error::Transfer)?;
 
         Ok(())
     }
@@ -130,7 +141,7 @@ where
 /// An SPI error that can occur when communicating with the DW3000
 pub enum Error<SPI>
 where
-    SPI: spi::ErrorType,
+    SPI: spi_type::spi::ErrorType,
 {
     /// SPI error occured during a transfer transaction
     Transfer(SPI::Error),
@@ -138,7 +149,7 @@ where
 
 impl<SPI> Display for Error<SPI>
 where
-    SPI: spi::ErrorType,
+    SPI: spi_type::spi::ErrorType,
     SPI::Error: core::fmt::Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -147,13 +158,13 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<SPI> std::error::Error for Error<SPI> where SPI: spi::ErrorType {}
+impl<SPI> std::error::Error for Error<SPI> where SPI: spi_type::spi::ErrorType {}
 
 // We can't derive this implementation, as the compiler will complain that the
 // associated error type doesn't implement `Debug`.
 impl<SPI> fmt::Debug for Error<SPI>
 where
-    SPI: spi::ErrorType,
+    SPI: spi_type::spi::ErrorType,
     SPI::Error: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -166,7 +177,7 @@ where
 #[cfg(feature = "defmt")]
 impl<SPI> defmt::Format for Error<SPI>
 where
-    SPI: spi::SpiDevice<u8>,
+    SPI: spi_type::spi::SpiDevice<u8>,
 {
     fn format(&self, f: defmt::Formatter) {
         match self {
@@ -556,7 +567,7 @@ macro_rules! impl_register {
         impl<SPI> DW3000<SPI> {
             $(
                 #[$doc]
-                pub fn $name_lower(&mut self) -> RegAccessor<$name, SPI> {
+                pub fn $name_lower(&mut self) -> RegAccessor<'_, $name, SPI> {
                     RegAccessor(self, PhantomData)
                 }
             )*
@@ -690,7 +701,7 @@ impl_register! {
     0x00, 0x30, 4, RW, DREF_TIME(dref_time) { ///  Delayed send or receive reference time
         value, 0, 31, u32; /// Delayed send or receive reference time
     }
-    0x00, 0x4, 3, RW, RX_FWTO(rx_fwto) { /// Receive frame wait timeout period
+    0x00, 0x34, 3, RW, RX_FWTO(rx_fwto) { /// Receive frame wait timeout period
         value, 0, 23, u32; /// Receive frame wait timeout period
     }
     0x00, 0x38, 1, RW, SYS_CTRL(sys_ctrl) { /// System Control Register
@@ -1119,6 +1130,9 @@ impl_register! {
     0x06, 0x0C, 4, RW, DTUNE3(dtune3) { /// Receiver tuning register
         value,  0,  31, u32; /// value
     }
+    0x06, 0x10, 4, RW, DTUNE4(dtune4) { /// Digital Tuning Reserved register
+        dtune4,  24,  31, u32; /// value
+    }
     0x06, 0x14, 4, RO, DTUNE5(dtune5) { /// Digital Tuning Reserved register
         value,  0,  31, u32; /// value
     }
@@ -1159,7 +1173,8 @@ impl_register! {
         value,  0x00,  0x3C, u128; ///  used to control the output voltage levels of the on chip LDOs
     }
     0x07, 0x48, 4, RW, LDO_CTRL(ldo_ctrl) { /// LDO control
-        value,  0,  31, u32; ///  LDO control
+        low,  0,  15, u16; ///  LDO control
+        high, 16,  31, u16; ///  LDO control
     }
     0x07, 0x51, 1, RW, LDO_RLOAD(ldo_rload) { /// LDO tuning register
         value,  0,  7, u8; ///  LDO tuning register
@@ -1204,9 +1219,10 @@ impl_register! {
     0x09, 0x00, 2, RW, PLL_CFG(pll_cfg) { /// PLL configuration
         value, 0, 15, u16; /// PLL configuration
     }
-    0x09, 0x04, 3, RW, PLL_CC(pll_cc) { /// PLL coarse code – starting code for calibration procedure
-        ch9_code, 0,  7, u8; /// PLL calibration coarse code for channel 5.
-        ch5_code, 8, 21, u8; /// PLL calibration coarse code for channel 9.
+    0x09, 0x04, 4, RW, PLL_CC(pll_cc) { /// PLL coarse code – starting code for calibration procedure
+        ch9_code, 0,  7, u8; /// PLL calibration coarse code for channel 9.
+        ch5_code, 8, 21, u16; /// PLL calibration coarse code for channel 5.
+        value,    0, 31, u32; /// PLL calibration coarse code.
     }
     0x09, 0x08, 2, RW, PLL_CAL(pll_cal) { /// PLL calibration configuration
         use_old,    1, 1, u8; /// Use the coarse code value as set in PLL_CC register as starting point for PLL calibration.
@@ -1405,14 +1421,19 @@ impl_register! {
         cal_temp,    11, 18, u8; /// Temperature at which the device was calibrated.
         tc_rxdly_en, 20, 20, u8; /// Temperature compensation for RX antenna delay.
     }
-    0x0E, 0x0C, 4, RW, IP_CONF(ip_conf) { /// Preamble Config – CIA preamble configuration
+    0x0E, 0x0C, 4, RW, IP_CONF_LO(ip_conf_lo) { /// Preamble Config – CIA preamble configuration
         ip_ntm,   0, 4,  u8; /// Preamble Noise Threshold Multiplier.
         ip_pmult, 5, 6,  u8; /// Preamble Peak Multiplier.
+        ip_scp,   8, 9,  u8; /// Undocumented bitfield for SCP mode.
         ip_rtm,  16, 20, u8; /// Preamble replica threshold multiplier
+    }
+    0x0E, 0x0E, 4, RW, IP_CONF_HI(ip_conf_hi) { /// Preamble Config – CIA preamble configuration
+        value,  0,  31, u32; /// Undocumented IP_CONF_HI register
     }
     0x0E, 0x12, 4, RW, STS_CONF_0(sts_conf_0) { /// STS Config 0 – CIA STS configuration
         sts_ntm,   0,  4, u8; /// STS Noise Threshold Multiplier.
         sts_pmult, 5,  6, u8; /// STS Peak Multiplier.
+        sts_scp,   8, 15,  u8; /// Undocumented bitfield for SCP mode.
         sts_rtm,  16, 22, u8; /// STS replica threshold multiplier
     }
     0x0E, 0x16, 4, RW, STS_CONF_1(sts_conf_1) { /// STS Config 1 – CIA STS configuration
@@ -1658,7 +1679,7 @@ impl Writable for TX_BUFFER {
 
 impl<SPI> DW3000<SPI> {
     /// Transmit Data Buffer
-    pub fn tx_buffer(&mut self) -> RegAccessor<TX_BUFFER, SPI> {
+    pub fn tx_buffer(&mut self) -> RegAccessor<'_, TX_BUFFER, SPI> {
         RegAccessor(self, PhantomData)
     }
 }
@@ -1707,7 +1728,7 @@ impl Readable for RX_BUFFER_0 {
 
 impl<SPI> DW3000<SPI> {
     /// Receive Data Buffer
-    pub fn rx_buffer_0(&mut self) -> RegAccessor<RX_BUFFER_0, SPI> {
+    pub fn rx_buffer_0(&mut self) -> RegAccessor<'_, RX_BUFFER_0, SPI> {
         RegAccessor(self, PhantomData)
     }
 }
@@ -1744,7 +1765,7 @@ pub mod rx_buffer_0 {
 /// Receive Data Buffer 1
 ///
 /// Currently only the first 127 bytes of the buffer are supported, which is
-/// enough to support standard Standard IEEE 802.15.4 UWB frames.
+/// enough to support Standard IEEE 802.15.4 UWB frames.
 #[allow(non_camel_case_types)]
 pub struct RX_BUFFER_1;
 
@@ -1768,7 +1789,7 @@ impl Readable for RX_BUFFER_1 {
 
 impl<SPI> DW3000<SPI> {
     /// Receive Data Buffer1
-    pub fn rx_buffer_1(&mut self) -> RegAccessor<RX_BUFFER_1, SPI> {
+    pub fn rx_buffer_1(&mut self) -> RegAccessor<'_, RX_BUFFER_1, SPI> {
         RegAccessor(self, PhantomData)
     }
 }

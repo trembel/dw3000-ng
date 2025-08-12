@@ -22,14 +22,14 @@ We mainly test on the ESP32 platform with `embassy` async framework.
 Include this crate in your Cargo project by adding the following to `Cargo.toml`:
 ```toml
 [dependencies]
-dw3000-ng = "0.8"
+dw3000-ng = "1.0"
 ```
 
 ## Documentation
 
 Please refer to the **[API Reference]**.
 
-Please also refer to the [DW3000 User Manual] 
+Please also refer to the [DW3000 User Manual]
 
 [API Reference]: https://docs.rs/dw3000-ng
 [DW3000 User Manual]: https://www.qorvo.com/products/d/da008154
@@ -56,6 +56,44 @@ If you are using this in your academic work, please cite it as follows:
 ```
 
 ## CHANGELOG
+
+### Current `main`
+
+### 1.0.2
+
+- Added compatibility with `smoltcp` 0.12
+
+### 1.0.1
+
+- Elided the `RegAccessor` lifetime
+- Fixed the wrong trait import when `async` is enabled/disabled
+
+### 1.0.0
+
+- Added `init_tracing` example to inspect the SPI transactions happening during the initialization of the DW3000
+- Modified `rx_wait` to not use `_unchecked` and return `Err` when the decoding of the 802.15.4 frame fails
+- **BREAKING**: The library is now both `sync` and `async` compatible. The feature `async` can be used to enable the corresponding interfaces.
+  - When `async`, the SPI traits are using `embedded_hal_async`, otherwise `embedded_hal`.
+- **BREAKING**: The delay primitives in the `config` function are now `embedded_hal/embedded_hal_async::delay::DelayNs` instead of `FnMut(u32) -> Future<Output = ()>`
+
+### 0.9.0
+
+- API change: `config` now takes a `delay_us(u32)` function to allow non-blocking initialization.
+- Now the radio init is feature-par with the official DW3000 driver. You should have much better TX/RX performance now.
+- Fixed the register definition of `RX_FWTO`. RX timeout is now working.
+
+### 0.8.4
+
+- Fixed important bug in 0.8.3 where we are trying to read the device ID before the device is ready
+
+### 0.8.3
+
+- Fixed infinite loop in `init()` if the SPI device is not ready or connected
+
+### 0.8.2
+
+- Add parameter `recv_time` to allow delayed receiving by @trembel
+- Fix `pll_cc` register by @JohannesProgrammiert
 
 ### 0.8.1
 
