@@ -3,10 +3,8 @@ use core::num::Wrapping;
 use crate::configs::{PhrRate, StsLen, UwbChannel};
 use crate::{
     configs::{PdoaMode, PhrMode, PreambleLength, StsMode},
-    ll, Config, Error, Ready, Uninitialized, DW3000,
+    ll, Config, Error, Ready, Sleeping, Uninitialized, DW3000,
 };
-
-use crate::{ll, Config, Error, Ready, Sleeping, Uninitialized, DW3000};
 
 use crate::{maybe_async_attr, spi_type};
 
@@ -221,6 +219,7 @@ where
             seq: self.seq,
             state: Sleeping,
         }
+    }
 
     /// Run the PGF calibration, async version
     #[maybe_async_attr]

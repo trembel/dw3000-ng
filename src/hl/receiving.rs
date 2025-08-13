@@ -64,7 +64,8 @@ pub struct RxQuality {
 
 /// A struct representing the carrier recovery integrator of the received message.
 #[cfg_attr(feature = "defmt", derive(Format))]
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CarrierRecoveryIntegrator(i32);
 
@@ -86,7 +87,6 @@ impl CarrierRecoveryIntegrator {
         self.0
     }
 }
-
 
 impl<SPI, RECEIVING> DW3000<SPI, RECEIVING>
 where
@@ -240,13 +240,13 @@ where
             rssi,
         };
 
-
         // read the carrier recovery integrator from the dw3000
         use crate::ll::drx_car_int;
         let carrier_integrator = CarrierRecoveryIntegrator::new(
             self.ll()
                 .drx_car_int()
                 .read()
+                .await
                 .map_err(|error| nb::Error::Other(Error::Spi(error)))?
                 .value(),
         );
@@ -395,8 +395,19 @@ where
             .map_err(|error| nb::Error::Other(Error::Spi(error)))?
             .rx_stamp();
 
+        // read the carrier recovery integrator from the dw3000
+        use crate::ll::drx_car_int;
+        let carrier_integrator = CarrierRecoveryIntegrator::new(
+            self.ll()
+                .drx_car_int()
+                .read()
+                .await
+                .map_err(|error| nb::Error::Other(Error::Spi(error)))?
+                .value(),
+        );
+
         // Re-enable RX immediately here. Might lose CIR
-        self.fast_cmd(FastCommand::CMD_RX)?;
+        self.fast_cmd(FastCommand::CMD_RX).await?;
 
         let rssi = self.get_first_path_signal_power().await?;
 
@@ -404,16 +415,6 @@ where
             los_confidence_level: 1.0, // TODO
             rssi,
         };
-
-        // read the carrier recovery integrator from the dw3000
-        use crate::ll::drx_car_int;
-        let carrier_integrator = CarrierRecoveryIntegrator::new(
-            self.ll()
-                .drx_car_int()
-                .read()
-                .map_err(|error| nb::Error::Other(Error::Spi(error)))?
-                .value(),
-        );
 
         // `rx_time` comes directly from the register, which should always
         // contain a 40-bit timestamp. Unless the hardware or its documentation

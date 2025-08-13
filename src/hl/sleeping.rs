@@ -27,9 +27,9 @@ where
     /// Configures the radio after sleep
     /// This function needs to be called, after the DW3000 has been awaked in order
     /// to reconfigure it
-    pub fn finish_wakeup(mut self) -> Result<DW3000<SPI, Ready>, Error<SPI>> {
+    pub async fn finish_wakeup(mut self) -> Result<DW3000<SPI, Ready>, Error<SPI>> {
         // Let's check that we're actually awake now
-        if self.ll.dev_id().read()?.ridtag() != 0xDECA {
+        if self.ll.dev_id().read().await?.ridtag() != 0xDECA {
             // Oh dear... We have not woken up!
             return Err(Error::StillAsleep);
         }
@@ -37,13 +37,13 @@ where
         // Readout `LDO_TUNE` from OTP to make sure it is none zero:
         // Only address 0x4 is of interest, as it is what
         // LDO_KICK copies to the configuration
-        self.ll.otp_cfg().modify(|_, w| w.otp_man(1))?;
-        self.ll.otp_addr().modify(|_, w| w.otp_addr(0x04))?;
-        self.ll.otp_cfg().modify(|_, w| w.otp_read(1))?;
-        let ldo_low = self.ll.otp_rdata().read()?.value();
+        self.ll.otp_cfg().modify(|_, w| w.otp_man(1)).await?;
+        self.ll.otp_addr().modify(|_, w| w.otp_addr(0x04)).await?;
+        self.ll.otp_cfg().modify(|_, w| w.otp_read(1)).await?;
+        let ldo_low = self.ll.otp_rdata().read().await?.value();
 
         if ldo_low != 0 {
-            self.ll.otp_cfg().modify(|_, w| w.ldo_kick(1))?;
+            self.ll.otp_cfg().modify(|_, w| w.ldo_kick(1)).await?;
         }
 
         Ok(DW3000 {

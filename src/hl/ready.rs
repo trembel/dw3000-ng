@@ -477,8 +477,8 @@ where
     }
 
     /// Enable the SPIRDY interrupt flag
-    pub fn enable_spirdy_interrupt(&mut self) -> Result<(), Error<SPI>> {
-        self.ll.sys_enable().modify(|_, w| w.spirdy_en(0b1))?;
+    pub async fn enable_spirdy_interrupt(&mut self) -> Result<(), Error<SPI>> {
+        self.ll.sys_enable().modify(|_, w| w.spirdy_en(0b1)).await?;
         Ok(())
     }
 
@@ -826,7 +826,7 @@ where
 
     /// This function is used to put the DW3000 into sleep.
     /// `sleepstate` sets the sleepmode and possibly the duration
-    pub fn sleep<DELAY: embedded_hal::delay::DelayNs>(
+    pub async fn sleep<DELAY: embedded_hal::delay::DelayNs>(
         mut self,
         sleepstate: SleepState,
         brownout: bool,
@@ -835,10 +835,11 @@ where
         // Enable auto restoration of AON memory and RX calibration on wakeup
         self.ll
             .aon_dig_cfg()
-            .modify(|_, w| w.onw_aon_dld(1).onw_pgfcal(1))?;
+            .modify(|_, w| w.onw_aon_dld(1).onw_pgfcal(1))
+            .await?;
 
         // Save AON
-        self.ll.aon_ctrl().modify(|_, w| w.save(1))?;
+        self.ll.aon_ctrl().modify(|_, w| w.save(1)).await?;
         delay.delay_us(85); // delay for 85us in order for AON to be saved (2.5.1.2)
 
         // HACK: Disable SPI, Read old spi prescaler of STM32U535CE, change to 16 for the next two writes, Enable SPI
@@ -860,52 +861,66 @@ where
 
         if sleepstate == SleepState::DeepSleep {
             // Set deepsleep mode
-            self.ll.aon_cfg().modify(|_, w| {
-                w.wake_cnt(0)
-                    .sleep_en(1)
-                    .wake_csn(1)
-                    .wake_wup(1)
-                    .brout_en(brownout.into())
-            })?;
+            self.ll
+                .aon_cfg()
+                .modify(|_, w| {
+                    w.wake_cnt(0)
+                        .sleep_en(1)
+                        .wake_csn(1)
+                        .wake_wup(1)
+                        .brout_en(brownout.into())
+                })
+                .await?;
         } else if let SleepState::Sleep(time) = sleepstate {
             //Set time before setting sleepmode
             // Get bytes from time
             let time_bytes = time.to_be_bytes();
 
             // Configure sleep time - write low byte directly to aon
-            self.ll.aon_wdata().write(|w| w.value(time_bytes[0]))?;
-            self.ll.aon_addr().write(|w| w.value(0x102))?;
+            self.ll
+                .aon_wdata()
+                .write(|w| w.value(time_bytes[0]))
+                .await?;
+            self.ll.aon_addr().write(|w| w.value(0x102)).await?;
             self.ll
                 .aon_ctrl()
-                .write(|w| w.dca_write_hi(1).dca_write(1))?;
-            self.ll.aon_ctrl().write(|w| w.dca_enab(1))?;
+                .write(|w| w.dca_write_hi(1).dca_write(1))
+                .await?;
+            self.ll.aon_ctrl().write(|w| w.dca_enab(1)).await?;
 
             // Configure sleep time - write high byte directly to aon
-            self.ll.aon_wdata().write(|w| w.value(time_bytes[1]))?;
-            self.ll.aon_addr().write(|w| w.value(0x103))?;
+            self.ll
+                .aon_wdata()
+                .write(|w| w.value(time_bytes[1]))
+                .await?;
+            self.ll.aon_addr().write(|w| w.value(0x103)).await?;
             self.ll
                 .aon_ctrl()
-                .write(|w| w.dca_write_hi(1).dca_write(1))?;
-            self.ll.aon_ctrl().write(|w| w.dca_enab(1))?;
+                .write(|w| w.dca_write_hi(1).dca_write(1))
+                .await?;
+            self.ll.aon_ctrl().write(|w| w.dca_enab(1)).await?;
 
             // Stop writing
-            self.ll.aon_ctrl().write(|w| w)?;
+            self.ll.aon_ctrl().write(|w| w).await?;
 
             // Delay for 32us, according to 8.2.11.6.1 of DW3000 user manual
             delay.delay_us(32);
 
             // Set sleep mode
-            self.ll.aon_cfg().modify(|_, w| {
-                w.wake_cnt(1)
-                    .sleep_en(1)
-                    .wake_csn(1)
-                    .wake_wup(1)
-                    .brout_en(brownout.into())
-            })?;
+            self.ll
+                .aon_cfg()
+                .modify(|_, w| {
+                    w.wake_cnt(1)
+                        .sleep_en(1)
+                        .wake_csn(1)
+                        .wake_wup(1)
+                        .brout_en(brownout.into())
+                })
+                .await?;
         }
 
         // Upload sleep configuration into AON in order to enter sleep
-        self.ll.aon_ctrl().modify(|_, w| w.cfg_upload(1))?;
+        self.ll.aon_ctrl().modify(|_, w| w.cfg_upload(1)).await?;
 
         // HACK: change prescaler back
         {

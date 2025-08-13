@@ -3,7 +3,8 @@ use defmt::Format;
 
 /// A struct representing the carrier frequency offset of the received message.
 #[cfg_attr(feature = "defmt", derive(Format))]
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub struct CarrierFreqOffset {
     /// Contains the carrier frequency offset in Hertz, as per
     /// DW3000 user manual 8.2.7.6.

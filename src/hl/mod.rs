@@ -13,6 +13,8 @@ use core::{fmt, num::Wrapping};
 
 #[allow(unused_imports)]
 pub use awake::*;
+#[allow(unused_imports)]
+pub use carrier_freq_offset::*;
 pub use error::*;
 pub use ready::*;
 #[allow(unused_imports)]
@@ -24,12 +26,11 @@ pub use sleeping::*;
 pub use state_impls::*;
 #[allow(unused_imports)]
 pub use uninitialized::*;
-#[allow(unused_imports)]
-pub use carrier_freq_offset::*;
 
 use crate::ll;
 
 mod awake;
+mod carrier_freq_offset;
 mod error;
 mod ready;
 mod receiving;
@@ -37,7 +38,6 @@ mod sending;
 mod sleeping;
 mod state_impls;
 mod uninitialized;
-mod carrier_freq_offset;
 
 /// Entry point to the DW3000 driver API
 #[derive(Copy, Clone)]
